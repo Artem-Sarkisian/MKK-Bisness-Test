@@ -1,0 +1,11 @@
+services:
+  consumer:
+    environment:
+      WEBHOOK_ALLOWED_HOSTS: '["webhook"]'
+  webhook:
+    build:
+      context: .
+      target: base
+    command: [python, examples/webhook_receiver.py]
+    ports:
+      - '127.0.0.1:18081:8080'

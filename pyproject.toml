@@ -1,0 +1,48 @@
+[project]
+name = "mkk-bisness-test"
+version = "0.1.0"
+description = "Asynchronous payment processing with transactional outbox"
+readme = "README.md"
+authors = [
+    { name = "Artem Sarkisian", email = "artem.sarkisian517@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "aiohttp>=3.12,<4",
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "fastapi>=0.115,<1",
+    "faststream[rabbit]>=0.6,<0.7",
+    "pydantic>=2,<3",
+    "pydantic-settings>=2,<3",
+    "sqlalchemy[asyncio]>=2.0,<2.1",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+payments-consumer = "mkk_bisness_test.consumer:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
+    "ruff>=0.17.4",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = ["integration: requires PostgreSQL or RabbitMQ"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]

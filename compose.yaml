@@ -1,0 +1,85 @@
+name: mkk-payments
+
+x-app: &app
+  build:
+    context: .
+    target: base
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=16m
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  environment: &environment
+    DATABASE_URL: postgresql+asyncpg://payments:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/payments
+    RABBITMQ_URL: amqp://payments:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}@rabbitmq:5672/
+    API_KEY: ${API_KEY:?Set API_KEY in .env}
+    WEBHOOK_TIMEOUT: ${WEBHOOK_TIMEOUT:-5}
+    WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-[]}
+    RETRY_BASE_SECONDS: ${RETRY_BASE_SECONDS:-2}
+    OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:-0.5}
+
+services:
+  postgres:
+    build:
+      context: .
+      target: database
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: payments
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U payments -d payments']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    build:
+      context: .
+      target: broker
+    hostname: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: payments
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - '127.0.0.1:15672:15672'
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    <<: *app
+    command: [sh, -c, 'alembic upgrade head && exec uvicorn mkk_bisness_test.api:create_app --factory --host 0.0.0.0 --port 8000']
+    ports:
+      - '127.0.0.1:8000:8000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, 'import os, urllib.request; r=urllib.request.Request("http://localhost:8000/api/v1/payments/00000000-0000-0000-0000-000000000000", headers={"X-API-Key":os.environ["API_KEY"]}); exec("try:\n urllib.request.urlopen(r, timeout=2)\nexcept urllib.error.HTTPError as e:\n assert e.code == 404")']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  consumer:
+    <<: *app
+    command: [python, -m, mkk_bisness_test.consumer]
+    depends_on:
+      api:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
